@@ -159,9 +159,9 @@ class NeuralNetMLP(object):
 
         # hidden weights
         for i in range(0, self.__layers_count - 3):
-            wi = np.random.uniform(-1.0, 1.0, size=self.n_hidden[i + 1] * (self.n_hidden[i] + 1))
-            wi = wi.reshape(self.n_hidden[i + 1], self.n_hidden[i] + 1)
-            self.__weights[i] = wi
+            wi = np.random.uniform(-1.0, 1.0, size=self.n_hidden[i]*(self.n_hidden[i-1] + 1))
+            wi = wi.reshape(self.n_hidden[i], self.n_hidden[i-1] + 1)
+            self.__weights[i+1] = wi
 
         # output weights
         w2 = np.random.uniform(-1.0, 1.0, size=self.n_output * (self.n_hidden[-1] + 1))
@@ -460,7 +460,7 @@ class NeuralNetMLP(object):
 
 nn = NeuralNetMLP(n_output=10,
                   n_features=X_train.shape[1],
-                  n_hidden=[128],
+                  n_hidden=[128, 128],
                   l2=0.1,
                   l1=0.0,
                   epochs=45,
