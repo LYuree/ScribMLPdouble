@@ -117,11 +117,13 @@ class NeuralNetMLP(object):
         self.n_features = n_features
         self.__layers_count = len(n_hidden) + 2
         self.n_hidden = n_hidden
-        self.__weights = [None for l in range(self.__layers_count - 1)]
+        self.weights = [None for l in range(self.__layers_count - 1)]
         self.a = [None for l in range(self.__layers_count)]
-        self.z = [None for l in range(self.__layers_count)]
-        self.sigma = [None for l in range(self.__layers_count)]
+        self.z = [None for l in range(self.__layers_count-1)]
+        self.sigma = [None for l in range(self.__layers_count-1)]
         self.grad = [None for l in range(self.__layers_count - 1)]
+        self.delta_w = [None for l in range(self.__layers_count - 1)]
+        self.delta_w_prev = [None for l in range(self.__layers_count - 1)]
         self.w1, self.w2 = self._initialize_weights()
         self.l1 = l1
         self.l2 = l2
@@ -155,20 +157,26 @@ class NeuralNetMLP(object):
         """Initialize weights with small random numbers."""
         w1 = np.random.uniform(-1.0, 1.0, size=self.n_hidden[0] * (self.n_features + 1))
         w1 = w1.reshape(self.n_hidden[0], self.n_features + 1)
-        self.__weights[0] = w1
+        self.weights[0] = w1
+        self.delta_w[0] = np.zeros(self.weights[0].shape)
+        self.delta_w_prev[0] = np.zeros(self.weights[0].shape)
 
         # hidden weights
         for i in range(0, self.__layers_count - 3):
-            wi = np.random.uniform(-1.0, 1.0, size=self.n_hidden[i]*(self.n_hidden[i-1] + 1))
-            wi = wi.reshape(self.n_hidden[i], self.n_hidden[i-1] + 1)
-            self.__weights[i+1] = wi
+            wi = np.random.uniform(-1.0, 1.0, size=self.n_hidden[i+1]*(self.n_hidden[i] + 1))
+            wi = wi.reshape(self.n_hidden[i+1], self.n_hidden[i] + 1)
+            self.weights[i+1] = wi
+            self.delta_w[i+1] = np.zeros(self.weights[i+1].shape)
+            self.delta_w_prev[i+1] = np.zeros(self.weights[i+1].shape)
 
         # output weights
         w2 = np.random.uniform(-1.0, 1.0, size=self.n_output * (self.n_hidden[-1] + 1))
         w2 = w2.reshape(self.n_output, self.n_hidden[-1] + 1)
-        self.__weights[-1] = w2
-        # print(self.__weights)
-        # for item in self.__weights:
+        self.weights[-1] = w2
+        self.delta_w[-1] = np.zeros(self.weights[-1].shape)
+        self.delta_w_prev[-1] = np.zeros(self.weights[-1].shape)
+        # print(self.weights)
+        # for item in self.weights:
         # print([len(a) for a in item])
         # print(len(item))
         return w1, w2
@@ -179,7 +187,7 @@ class NeuralNetMLP(object):
     #   w1 = w1.reshape(self.n_hidden, self.n_features + 1)
     #   w2 = np.random.uniform(-1.0, 1.0, size=self.n_output*(self.n_hidden + 1))
     #   w2 = w2.reshape(self.n_output, self.n_hidden + 1)
-    #   for item in self.__weights:
+    #   for item in self.weights:
     #     # print([len(a) for a in item])
     #     print(len(item))
     #   return w1, w2
@@ -248,7 +256,7 @@ class NeuralNetMLP(object):
         ai = self._add_bias_unit(X, how='column')
         a1 = ai
         self.a[0] = a1
-        zi = self.__weights[0].dot(a1.T)
+        zi = self.weights[0].dot(a1.T)
         z2 = zi
         self.z[0] = z2
         # a2 = self._sigmoid(z2)
@@ -256,16 +264,18 @@ class NeuralNetMLP(object):
         # zi = z2
         # ai = a1
 
-        for i in range(1, self.__layers_count - 2):
-            ai = self._sigmoid(self.z[0])
+        for i in range(1, self.__layers_count - 1):
+            ai = self._sigmoid(self.z[i-1])
             ai = self._add_bias_unit(ai, how='row')
-            zi = self.__weights[i].dot(ai)
+            zi = self.weights[i].dot(ai)
+            z2 = zi
             self.a[i] = ai
             self.z[i] = zi
 
-        a2 = self._sigmoid(z2)
-        a2 = self._add_bias_unit(a2, how='row')
-        z3 = self.__weights[-1].dot(a2)
+        # a2 = self._sigmoid(z2)
+        # a2 = self._add_bias_unit(a2, how='row')
+        a2 = ai
+        z3 = self.weights[-1].dot(a2)
         a3 = self._sigmoid(z3)
         self.a[-1] = a3
         self.z[-1] = z3
@@ -276,7 +286,7 @@ class NeuralNetMLP(object):
         """Compute L2-regularization cost"""
         # return (lambda_/2.0) * (np.sum(w1[:, 1:] ** 2) + np.sum(w2[:, 1:] ** 2))
         sum = 0
-        for wi in self.__weights:
+        for wi in self.weights:
             sum += np.sum(wi[:, 1:] ** 2)
         return (lambda_ / 2.0) * sum
 
@@ -284,7 +294,7 @@ class NeuralNetMLP(object):
         """Compute L1-regularization cost"""
         # return (lambda_/2.0) * (np.abs(w1[:, 1:]).sum() + np.abs(w2[:, 1:]).sum())
         sum = 0
-        for wi in self.__weights:
+        for wi in self.weights:
             sum += np.abs(wi[:, 1:]).sum()
         return (lambda_ / 2.0) * sum
 
@@ -357,15 +367,57 @@ class NeuralNetMLP(object):
             """
         # backpropagation
         sigma3 = a3 - y_enc
-        z2 = self._add_bias_unit(z2, how='row')
-        sigma2 = w2.T.dot(sigma3) * self._sigmoid_gradient(z2)
+        self.sigma[-1] = sigma3
+        grad2 = sigma3.dot(self.a[-2].T)
+        self.grad[-1] = grad2
+        self.grad[-1][:, 1:] += (self.weights[-1][:, 1:] * (self.l1 + self.l2))
+        self.delta_w[-1] = self.eta*self.grad[-1]
+        self.weights[-1] -= (self.delta_w[-1] + (self.alpha * self.delta_w_prev[-1]))
+        self.delta_w_prev[-1] = self.delta_w[-1]
+        # self.z[-2] = z2 # do I need that?
+        sigmai = sigma3
+        # gradi = grad2
+        for i in reversed(range(self.__layers_count - 3)):
+            # sigmai is basically sigma[i+2] in terms of this loop
+            # like, we have i = 0 => we take self.sigma[i+2], which is basically sigma3
+            zi = self._add_bias_unit(self.z[i+1], how='row')
+            sigmai = self.weights[i+2].T.dot(sigmai)*self._sigmoid_gradient(zi)
+            sigmai = sigmai[1:, :]
+            self.sigma[i+1] = sigmai
+            # gradi = sigmai.dot(self.a[i+2].T)
+            gradi = sigmai.dot(self.a[i+1].T)
+            gradi[:, 1:] += (self.weights[i+1][:, 1:] * (self.l1 + self.l2))
+            self.grad[i+1] = gradi
+            self.delta_w[i+1] = self.eta*self.grad[i+1]
+            self.weights[i+1] -= (self.delta_w[i+1] + (self.alpha * self.delta_w_prev[i+1]))
+            self.delta_w_prev[i+1] = self.delta_w[i+1]
+
+        zi = self._add_bias_unit(self.z[0], how='row')
+        sigma2 = self.weights[1].T.dot(sigmai)*self._sigmoid_gradient(zi)
         sigma2 = sigma2[1:, :]
-        grad1 = sigma2.dot(a1)
-        grad2 = sigma3.dot(a2.T)
+        self.sigma[0] = sigma2
+        grad1 = sigma2.dot(self.a[0])
+        self.grad[0] = grad1
+        self.grad[0][:, 1:] += (self.weights[0][:, 1:] * (self.l1 + self.l2))
+        self.delta_w[0] = self.eta*self.grad[0]
+        self.weights[0] -= (self.delta_w[0] + (self.alpha * self.delta_w_prev[0]))
+        self.delta_w_prev[0] = self.delta_w[0]
+        # z2 = self._add_bias_unit(z2, how='row')
+        # sigma2 = w2.T.dot(sigma3) * self._sigmoid_gradient(z2)
+        # sigma2 = sigma2[1:, :]
+        # self.sigma[0] = sigma2
+        # grad1 = sigma2.dot(self.a[0])
+        # self.grad[0] = grad1
+        # self.grad[0][:, 1:] += (self.weights[0][:, 1:] * (self.l1 + self.l2))
+
+        # sigma2 = w2.T.dot(sigma3) * self._sigmoid_gradient(z2)
+        # sigma2 = sigma2[1:, :]
+        # grad1 = sigma2.dot(a1)
+        # grad2 = sigma3.dot(a2.T)
 
         # regularize
-        grad1[:, 1:] += (w1[:, 1:] * (self.l1 + self.l2))
-        grad2[:, 1:] += (w2[:, 1:] * (self.l1 + self.l2))
+        # grad1[:, 1:] += (w1[:, 1:] * (self.l1 + self.l2))
+        # grad2[:, 1:] += (w2[:, 1:] * (self.l1 + self.l2))
 
         return grad1, grad2
 
@@ -416,8 +468,10 @@ class NeuralNetMLP(object):
         X_data, y_data = X.copy(), y.copy()
         y_enc = self._encode_labels(y, self.n_output)
 
-        delta_w1_prev = np.zeros(self.w1.shape)
-        delta_w2_prev = np.zeros(self.w2.shape)
+        delta_w_w1_prev = np.zeros(self.w1.shape)
+        delta_w_w2_prev = np.zeros(self.w2.shape)
+        self.delta_w_prev[0] = delta_w_w1_prev
+        self.delta_w_prev[-1] = delta_w_w2_prev
 
         for i in range(self.epochs):
 
@@ -448,19 +502,21 @@ class NeuralNetMLP(object):
                                                   y_enc=y_enc[:, idx],
                                                   w1=self.w1,
                                                   w2=self.w2)
+                                                  
 
-                delta_w1, delta_w2 = self.eta * grad1, self.eta * grad2
-                self.w1 -= (delta_w1 + (self.alpha * delta_w1_prev))
-                self.w2 -= (delta_w2 + (self.alpha * delta_w2_prev))
-                delta_w1_prev, delta_w2_prev = delta_w1, delta_w2
-                # self.grad = [None for l in range(self.__layers_count - 1)]
+
+                # delta_w_w1, delta_w_w2 = self.eta * grad1, self.eta * grad2
+                # self.w1 -= (delta_w_w1 + (self.alpha * delta_w_w1_prev))
+                # self.w2 -= (delta_w_w2 + (self.alpha * delta_w_w2_prev))
+                # delta_w_w1_prev, delta_w_w2_prev = delta_w_w1, delta_w_w2
+                self.grad = [None for l in range(self.__layers_count - 1)]
 
         return self
 
 
 nn = NeuralNetMLP(n_output=10,
                   n_features=X_train.shape[1],
-                  n_hidden=[128, 128],
+                  n_hidden=[128, 256],
                   l2=0.1,
                   l1=0.0,
                   epochs=45,
