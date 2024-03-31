@@ -253,33 +253,38 @@ class NeuralNetMLP(object):
           Activation of output layer.
 
         """
-        ai = self._add_bias_unit(X, how='column')
-        a1 = ai
-        self.a[0] = a1
-        zi = self.weights[0].dot(a1.T)
-        z2 = zi
-        self.z[0] = z2
+        # ai = self._add_bias_unit(X, how='column')
+        # a1 = ai
+        self.a[0] = self._add_bias_unit(X, how='column')
+        self.z[0] = self.weights[0].dot(self.a[0].T)
+        # self.z[0] = z2
         # a2 = self._sigmoid(z2)
         # a2 = self._add_bias_unit(a2, how='row')
         # zi = z2
         # ai = a1
 
         for i in range(1, self.__layers_count - 1):
-            ai = self._sigmoid(self.z[i-1])
-            ai = self._add_bias_unit(ai, how='row')
-            zi = self.weights[i].dot(ai)
-            z2 = zi
-            self.a[i] = ai
-            self.z[i] = zi
+            # ai = self._sigmoid(self.z[i-1])
+            # ai = self._add_bias_unit(ai, how='row')
+            # zi = self.weights[i].dot(ai)
+            # z2 = zi
+            self.a[i] = self._sigmoid(self.z[i-1])
+            self.a[i] = self._add_bias_unit(self.a[i], how='row')
+            self.z[i] = self.weights[i].dot(self.a[i])
 
         # a2 = self._sigmoid(z2)
         # a2 = self._add_bias_unit(a2, how='row')
-        a2 = ai
-        z3 = self.weights[-1].dot(a2)
-        a3 = self._sigmoid(z3)
-        self.a[-1] = a3
-        self.z[-1] = z3
+        # a2 = self.a[2]
+        # z3 = self.weights[-1].dot(self.a[2])
+        # a3 = self._sigmoid(self.z[-1])
+        # self.z[-1] = z3
+        self.a[-1] = self._sigmoid(self.z[-1])
         # a3 = ai
+        a1 = self.a[0]
+        a2 = self.a[-2]
+        a3 = self.a[-1]
+        z2 = self.z[-2]
+        z3 = self.z[-1]
         return a1, z2, a2, z3, a3
 
     def _L2_reg(self, lambda_):  # , w1, w2):
@@ -516,7 +521,7 @@ class NeuralNetMLP(object):
 
 nn = NeuralNetMLP(n_output=10,
                   n_features=X_train.shape[1],
-                  n_hidden=[128, 256],
+                  n_hidden=[128],
                   l2=0.1,
                   l1=0.0,
                   epochs=45,
