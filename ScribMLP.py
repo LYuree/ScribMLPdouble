@@ -1,6 +1,7 @@
 import os
 import struct
 import numpy as np
+import codecs, json
 
 
 def load_mnist(path, kind='train'):
@@ -111,7 +112,7 @@ class NeuralNetMLP(object):
     def __init__(self, n_output, n_features, n_hidden=(30),
                  l1=0.0, l2=0.0, epochs=500, eta=0.001,
                  alpha=0.0, decrease_const=0.0, shuffle=True,
-                 minibatches=1, random_state=None):
+                 minibatches=1, random_state=None, load_weights=False):
         np.random.seed(random_state)
         self.n_output = n_output
         self.n_features = n_features
@@ -124,7 +125,6 @@ class NeuralNetMLP(object):
         self.grad = [None for l in range(self.__layers_count - 1)]
         self.delta_w = [None for l in range(self.__layers_count - 1)]
         self.delta_w_prev = [None for l in range(self.__layers_count - 1)]
-        self.w1, self.w2 = self._initialize_weights()
         self.l1 = l1
         self.l2 = l2
         self.epochs = epochs
@@ -133,6 +133,13 @@ class NeuralNetMLP(object):
         self.decrease_const = decrease_const
         self.shuffle = shuffle
         self.minibatches = minibatches
+        self._weights_file_name = 'weights.json'
+        if (load_weights):
+            self.w1, self.w2 = 1.0, 1.0
+            self.weights = self._load_weights(self._weights_file_name)
+        else:
+            self.w1, self.w2 = self._initialize_weights()            
+
 
     def _encode_labels(self, y, k):
         """Encode labels into one-hot representation
@@ -152,6 +159,25 @@ class NeuralNetMLP(object):
             onehot[val, idx] = 1.0
         return onehot
 
+    def _save_weights(self, file_name):
+        with open(file_name, 'w') as file:
+            weights = [np.array(item) for item in self.weights]
+            weights_list = []
+            for item in weights:
+                weights_list.append(item.tolist())
+            json.dump(weights_list, file)
+    
+    def _load_weights(self, file_name):
+        with open(file_name, 'r') as file:
+            data = json.load(file)
+            return data
+
+    def __decode_weights(self, file_name):
+        obj_text = codecs.open(file_name, 'r', encoding='utf-8').read()
+        b_new = json.loads(obj_text)
+        return b_new
+        # a_new = np.array(b_new)
+    
     def _initialize_weights(self):
         # input weights
         """Initialize weights with small random numbers."""
@@ -208,6 +234,13 @@ class NeuralNetMLP(object):
         """Compute gradient of the logistic function"""
         sg = self._sigmoid(z)
         return sg * (1 - sg)
+    
+    def _relu(x):
+      return x * (x > 0)
+
+
+    def _relu_gradient(x):
+      return (x > 0)
 
     def _add_bias_unit(self, X, how='column'):
         """Add bias unit (column or row of 1s) to array at index 0"""
@@ -473,10 +506,10 @@ class NeuralNetMLP(object):
         X_data, y_data = X.copy(), y.copy()
         y_enc = self._encode_labels(y, self.n_output)
 
-        delta_w_w1_prev = np.zeros(self.w1.shape)
-        delta_w_w2_prev = np.zeros(self.w2.shape)
-        self.delta_w_prev[0] = delta_w_w1_prev
-        self.delta_w_prev[-1] = delta_w_w2_prev
+        # delta_w_w1_prev = np.zeros(self.w1.shape)
+        # delta_w_w2_prev = np.zeros(self.w2.shape)
+        # self.delta_w_prev[0] = delta_w_w1_prev
+        # self.delta_w_prev[-1] = delta_w_w2_prev
 
         for i in range(self.epochs):
 
@@ -515,7 +548,7 @@ class NeuralNetMLP(object):
                 # self.w2 -= (delta_w_w2 + (self.alpha * delta_w_w2_prev))
                 # delta_w_w1_prev, delta_w_w2_prev = delta_w_w1, delta_w_w2
                 self.grad = [None for l in range(self.__layers_count - 1)]
-
+        self._save_weights(self._weights_file_name)
         return self
 
 
@@ -529,7 +562,8 @@ nn = NeuralNetMLP(n_output=10,
                   alpha=0.001,
                   decrease_const=0.00001,
                   minibatches=50,
-                  random_state=1)
+                  random_state=1,
+                  load_weights=True)
 
 nn.fit(X_train, y_train, print_progress=True)
 
