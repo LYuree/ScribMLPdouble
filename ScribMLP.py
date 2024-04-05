@@ -2,6 +2,7 @@ import os
 import struct
 import numpy as np
 import codecs, json
+from sklearn.model_selection import train_test_split
 
 
 def load_mnist(path, kind='train'):
@@ -136,7 +137,16 @@ class NeuralNetMLP(object):
         self._weights_file_name = 'weights.json'
         if (load_weights):
             self.w1, self.w2 = 1.0, 1.0
-            self.weights = self._load_weights(self._weights_file_name)
+            self.weights = list(map(np.array, self._load_weights(self._weights_file_name)))
+            
+            self.delta_w[0] = np.zeros(self.weights[0].shape)
+            self.delta_w_prev[0] = np.zeros(self.weights[0].shape)
+            for i in range(0, self.__layers_count - 3):
+                self.delta_w[i+1] = np.zeros(self.weights[i+1].shape)
+                self.delta_w_prev[i+1] = np.zeros(self.weights[i+1].shape)
+            self.delta_w[-1] = np.zeros(self.weights[-1].shape)
+            self.delta_w_prev[-1] = np.zeros(self.weights[-1].shape)
+            
         else:
             self.w1, self.w2 = self._initialize_weights()            
 
@@ -157,6 +167,11 @@ class NeuralNetMLP(object):
         onehot = np.zeros((k, y.shape[0]))
         for idx, val in enumerate(y):
             onehot[val, idx] = 1.0
+        return onehot
+
+    def _encode_labels_one(self, y):
+        onehot = np.zeros(10)
+        onehot[y] = 1.0
         return onehot
 
     def _save_weights(self, file_name):
@@ -481,6 +496,19 @@ class NeuralNetMLP(object):
         a1, z2, a2, z3, a3 = self._feedforward(X, self.w1, self.w2)
         y_pred = np.argmax(z3, axis=0)
         return y_pred
+    
+    def fit_one(self, X_row, y_row):
+        y_enc = self._encode_labels_one(y_row)
+        self.decrease_const += self.decrease_const
+        self.eta /= (1 + self.decrease_const)
+        a1, z2, a2, z3, a3 = self._feedforward(X_row, self.w1, self.w2)
+        grad1, grad2 = self._get_gradient(a1=a1, a2=a2,
+                                    a3=a3, z2=z2,
+                                    y_enc=y_enc,
+                                    w1=self.w1,
+                                    w2=self.w2)
+
+
 
     def fit(self, X, y, print_progress=False):
         """ Learn weights from training data.
@@ -554,16 +582,40 @@ class NeuralNetMLP(object):
 
 nn = NeuralNetMLP(n_output=10,
                   n_features=X_train.shape[1],
-                  n_hidden=[128],
+                  # n_hidden=[128,257,30],
+                  n_hidden=[250,30],
                   l2=0.1,
                   l1=0.0,
-                  epochs=45,
+                  epochs=5,
                   eta=0.001,
                   alpha=0.001,
                   decrease_const=0.00001,
                   minibatches=50,
                   random_state=1,
-                  load_weights=True)
+                  load_weights=False)
+
+
+# =====================================
+# CUSTOM DATASET
+# =====================================
+
+my_images_dataset = None
+with open("my_images.csv", 'r') as read_obj:
+    my_images_dataset = np.array([list(map(int,rec)) for rec in csv.reader(read_obj, delimiter=',')])
+X_train_c, X_test_c, y_train_c, y_test_c = train_test_split(my_images_dataset[:10000, 1:], my_images_dataset[:10000, 0], test_size=0.33, random_state=42)
+
+# nn.fit(X_train_c, y_train_c, print_progress=True)
+
+# y_train_pred_c = nn.predict(X_train_c)
+# acc = np.sum(y_train_c == y_train_pred_c, axis=0) / X_train_c.shape[0]
+# print('Training accuracy: %.2f%%' % (acc * 100))
+
+# y_test_pred_c = nn.predict(X_test_c)
+# acc = np.sum(y_test_c == y_test_pred_c, axis=0) / X_test_c.shape[0]
+# print('Testing accuracy: %.2f%%' % (acc * 100))
+
+# =====================================
+# =====================================
 
 nn.fit(X_train, y_train, print_progress=True)
 
@@ -577,4 +629,4 @@ print('Training accuracy: %.2f%%' % (acc * 100))
 
 y_test_pred = nn.predict(X_test)
 acc = np.sum(y_test == y_test_pred, axis=0) / X_test.shape[0]
-print('Training accuracy: %.2f%%' % (acc * 100))
+print('Testing accuracy: %.2f%%' % (acc * 100))
